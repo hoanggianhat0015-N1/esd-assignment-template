@@ -1,0 +1,142 @@
+/* USER CODE BEGIN Header */
+/**
+  ******************************************************************************
+  * @file           : main.c
+  * @brief          : Main program body
+  ******************************************************************************
+  * @attention
+  *
+  * Copyright (c) 2025 STMicroelectronics.
+  * All rights reserved.
+  *
+  * This software is licensed under terms that can be found in the LICENSE file
+  * in the root directory of this software component.
+  * If no LICENSE file comes with this software, it is provided AS-IS.
+  *
+  ******************************************************************************
+  */
+/* USER CODE END Header */
+/* Includes ------------------------------------------------------------------*/
+#include "main.h"   // nếu không có thì tự định nghĩa địa chỉ thanh ghi như bạn làm
+#include "stm32f1xx.h"
+
+// --- Định nghĩa thanh ghi RCC, GPIOC, GPIOD ---
+#define RCC_APB2ENR   (*(volatile unsigned int*)(0x40021018))
+#define GPIOC_CRH     (*(volatile unsigned int*)(0x40011004))
+#define GPIOC_ODR     (*(volatile unsigned int*)(0x4001100C))
+
+#define GPIOD_CRH     (*(volatile unsigned int*)(0x40011404))
+#define GPIOD_ODR     (*(volatile unsigned int*)(0x4001140C))
+#define GPIOD_IDR     (*(volatile unsigned int*)(0x40011408))
+
+// --- EXTI & AFIO ---
+#define AFIO_EXTICR3  (*(volatile unsigned int*)(0x40010010))
+#define EXTI_IMR      (*(volatile unsigned int*)(0x40010400))
+#define EXTI_RTSR     (*(volatile unsigned int*)(0x40010408))
+#define EXTI_FTSR     (*(volatile unsigned int*)(0x4001040C))
+#define EXTI_PR       (*(volatile unsigned int*)(0x40010414))
+
+#define NVIC_ISER1    (*(volatile unsigned int*)(0xE000E104)) // IRQ >=32
+
+// --- LED control ---
+void LED_on(void){
+    GPIOC_ODR &= ~(1<<13); // LED sáng (active low)
+}
+void LED_off(void){
+    GPIOC_ODR |= (1<<13);  // LED tắt
+}
+
+// --- Init GPIO ---
+void GPIO_Init(void){
+    // Enable clock cho GPIOC, GPIOD, AFIO
+    RCC_APB2ENR |= (1<<4);  // GPIOC
+    RCC_APB2ENR |= (1<<5);  // GPIOD
+    RCC_APB2ENR |= (1<<0);  // AFIO
+
+    // PC13 output push-pull 10MHz
+    GPIOC_CRH &= ~(0xF << 20);
+    GPIOC_CRH |=  (0x1 << 20);
+
+    // PD11 input pull-up
+    GPIOD_CRH &= ~(0xF << 12);
+    GPIOD_CRH |=  (0x8 << 12);   // CNF11 = 10 (input PU/PD), MODE11 = 00
+    GPIOD_ODR |=  (1<<11);       // kéo lên
+}
+
+// --- Init EXTI ---
+void EXTI_Init(void){
+    // Map PD11 -> EXTI11
+    AFIO_EXTICR3 &= ~(0xF << 12);
+    AFIO_EXTICR3 |=  (0x3 << 12);   // 0011 = Port D
+
+    // Cho phép ngắt line 11
+    EXTI_IMR  |= (1<<11);
+
+    // Cả rising và falling edge
+    EXTI_FTSR |= (1<<11); // falling: nhấn
+    EXTI_RTSR |= (1<<11); // rising : thả
+
+    // Enable NVIC cho EXTI15_10 (IRQn = 40 → ISER1 bit8)
+    NVIC_ISER1 |= (1<<8);
+}
+
+// --- IRQ Handler ---
+void EXTI15_10_IRQHandler(void){
+    if(EXTI_PR & (1<<11)){  // Nếu có ngắt từ line 11
+        if((GPIOD_IDR & (1<<11)) == 0){
+            // PD11 = 0 (nhấn) → LED tắt
+            LED_off();
+        } else {
+            // PD11 = 1 (thả) → LED sáng
+            LED_on();
+        }
+        EXTI_PR |= (1<<11); // Xóa cờ ngắt
+    }
+}
+
+int main(void){
+    GPIO_Init();
+    EXTI_Init();
+
+    LED_on(); // Ban đầu sáng
+
+    while(1){
+        // CPU rảnh → chờ ngắt
+    }
+}
+
+
+/* USER CODE BEGIN 4 */
+
+/* USER CODE END 4 */
+
+/**
+  * @brief  This function is executed in case of error occurrence.
+  * @retval None
+  */
+void Error_Handler(void)
+{
+  /* USER CODE BEGIN Error_Handler_Debug */
+  /* User can add his own implementation to report the HAL error return state */
+  __disable_irq();
+  while (1)
+  {
+  }
+  /* USER CODE END Error_Handler_Debug */
+}
+#ifdef USE_FULL_ASSERT
+/**
+  * @brief  Reports the name of the source file and the source line number
+  *         where the assert_param error has occurred.
+  * @param  file: pointer to the source file name
+  * @param  line: assert_param error line source number
+  * @retval None
+  */
+void assert_failed(uint8_t *file, uint32_t line)
+{
+  /* USER CODE BEGIN 6 */
+  /* User can add his own implementation to report the file name and line number,
+     ex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
+  /* USER CODE END 6 */
+}
+#endif /* USE_FULL_ASSERT */
